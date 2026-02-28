@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>AVP Agent — IA + Autorización</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet"/>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:       #060a0f;
+    --surface:  #0d1520;
+    --surface2: #111d2e;
+    --border:   #1a2d45;
+    --cyan:     #00d4ff;
+    --cyan-dim: #0099bb;
+    --green:    #00ff88;
+    --red:      #ff3d5a;
+    --yellow:   #ffd166;
+    --purple:   #b06cff;
+    --text:     #c8daf0;
+    --text-dim: #4a6a8a;
+    --white:    #eef5ff;
+    --mono:     'JetBrains Mono', monospace;
+    --display:  'Syne', sans-serif;
+  }
+  body { background:var(--bg);color:var(--text);font-family:var(--mono);height:100vh;display:flex;flex-direction:column;overflow:hidden; }
+  body::before { content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,212,255,0.012) 2px,rgba(0,212,255,0.012) 4px);pointer-events:none;z-index:9999; }
+
+  header { display:flex;align-items:center;justify-content:space-between;padding:0 1.25rem;height:52px;border-bottom:1px solid var(--border);background:rgba(6,10,15,0.97);flex-shrink:0; }
+  .logo { display:flex;align-items:center;gap:8px; }
+  .logo-icon { width:30px;height:30px;border:1.5px solid var(--cyan);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 0 10px rgba(0,212,255,0.2); }
+  .logo-title { font-family:var(--display);font-size:0.95rem;font-weight:800;color:var(--white); }
+  .logo-title span { color:var(--cyan); }
+  .hdr-right { display:flex;align-items:center;gap:8px; }
+  .sdot { width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);animation:pulse 2s infinite; }
+  .sdot.thinking { background:var(--yellow);box-shadow:0 0 6px var(--yellow);animation:pulse 0.5s infinite; }
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+  .slabel { font-size:0.7rem;color:var(--text-dim); }
+
+  .layout { display:grid;grid-template-columns:260px 1fr 240px;flex:1;overflow:hidden; }
+
+  .sidebar { border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto;background:var(--surface); }
+  .sidebar::-webkit-scrollbar{width:3px}
+  .sidebar::-webkit-scrollbar-thumb{background:var(--border)}
+  .ssec { padding:0.875rem;border-bottom:1px solid var(--border); }
+  .slbl { font-size:0.62rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:0.6rem; }
+
+  .uchip{display:flex;align-items:center;gap:7px;padding:7px 9px;border-radius:7px;border:1px solid var(--border);margin-bottom:5px;background:var(--surface2);}
+  .uavatar{font-size:17px}
+  .uname{font-size:0.72rem;color:var(--white);font-weight:600}
+  .urole{font-size:0.62rem;color:var(--text-dim)}
+  .rtag{font-size:0.58rem;padding:2px 5px;border-radius:3px;font-weight:700;text-transform:uppercase}
+  .rAdmin  {background:rgba(0,212,255,0.1);color:var(--cyan);border:1px solid rgba(0,212,255,0.2)}
+  .rAnalyst{background:rgba(255,209,102,0.1);color:var(--yellow);border:1px solid rgba(255,209,102,0.2)}
+  .rAuditor{background:rgba(0,255,136,0.1);color:var(--green);border:1px solid rgba(0,255,136,0.2)}
+
+  .sbtn{display:block;width:100%;text-align:left;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text-dim);font-family:var(--mono);font-size:0.68rem;cursor:pointer;margin-bottom:4px;transition:all 0.15s;line-height:1.4}
+  .sbtn:hover{border-color:var(--cyan-dim);color:var(--text)}
+
+  .chat-area{display:flex;flex-direction:column;overflow:hidden;}
+  .messages{flex:1;overflow-y:auto;padding:1rem;display:flex;flex-direction:column;gap:0.875rem;}
+  .messages::-webkit-scrollbar{width:3px}
+  .messages::-webkit-scrollbar-thumb{background:var(--border)}
+
+  .welcome{text-align:center;padding:1.5rem 1rem}
+  .welcome h2{font-family:var(--display);font-size:1.3rem;color:var(--white);margin-bottom:0.4rem}
+  .welcome p{font-size:0.75rem;color:var(--text-dim);line-height:1.6;max-width:340px;margin:0 auto}
+
+  .msg{display:flex;gap:8px;animation:fadeUp 0.2s ease}
+  .msg.user{flex-direction:row-reverse}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+  .mavatar{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;border:1px solid var(--border)}
+  .msg.agent .mavatar{background:rgba(0,212,255,0.08);border-color:rgba(0,212,255,0.2)}
+  .msg.user  .mavatar{background:rgba(176,108,255,0.08);border-color:rgba(176,108,255,0.2)}
+  .mcontent{max-width:78%;display:flex;flex-direction:column;gap:3px}
+  .msg.user .mcontent{align-items:flex-end}
+  .mbubble{padding:9px 13px;border-radius:9px;font-size:0.78rem;line-height:1.6;border:1px solid var(--border)}
+  .msg.agent .mbubble{background:var(--surface);color:var(--text);border-radius:3px 9px 9px 9px}
+  .msg.user  .mbubble{background:rgba(176,108,255,0.08);color:var(--white);border-color:rgba(176,108,255,0.2);border-radius:9px 3px 9px 9px}
+  .mtime{font-size:0.6rem;color:var(--text-dim);padding:0 3px}
+
+  .di{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:100px;font-size:0.7rem;font-weight:700;margin:1px 0}
+  .di-ALLOW{background:rgba(0,255,136,0.1);color:var(--green);border:1px solid rgba(0,255,136,0.3)}
+  .di-DENY {background:rgba(255,61,90,0.1);color:var(--red);border:1px solid rgba(255,61,90,0.3)}
+
+  .typing{display:flex;align-items:center;gap:4px;padding:10px 13px}
+  .typing span{width:5px;height:5px;background:var(--cyan-dim);border-radius:50%;animation:bounce 1.2s infinite}
+  .typing span:nth-child(2){animation-delay:0.2s}
+  .typing span:nth-child(3){animation-delay:0.4s}
+  @keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-5px)}}
+
+  .input-area{padding:0.875rem 1rem;border-top:1px solid var(--border);background:var(--surface);flex-shrink:0}
+  .irow{display:flex;gap:7px;align-items:flex-end}
+  .ibox{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:9px 12px;color:var(--white);font-family:var(--mono);font-size:0.78rem;resize:none;outline:none;min-height:40px;max-height:100px;transition:border-color 0.2s;line-height:1.5}
+  .ibox:focus{border-color:var(--cyan-dim)}
+  .ibox::placeholder{color:var(--text-dim)}
+  .send-btn{width:40px;height:40px;border-radius:9px;background:linear-gradient(135deg,var(--cyan-dim),var(--cyan));border:none;color:var(--bg);font-size:15px;cursor:pointer;transition:all 0.15s;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .send-btn:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,212,255,0.3)}
+  .send-btn:disabled{opacity:0.4;cursor:not-allowed;transform:none}
+  .ihint{font-size:0.62rem;color:var(--text-dim);margin-top:5px}
+
+  .agent-log{border-left:1px solid var(--border);display:flex;flex-direction:column;background:var(--surface);overflow:hidden}
+  .lhdr{padding:0.7rem 0.875rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--surface2);flex-shrink:0}
+  .ltitle{font-size:0.68rem;color:var(--white);font-weight:600;text-transform:uppercase;letter-spacing:0.08em}
+  .lentries{flex:1;overflow-y:auto;padding:0.6rem}
+  .lentries::-webkit-scrollbar{width:3px}
+  .lentries::-webkit-scrollbar-thumb{background:var(--border)}
+  .lentry{margin-bottom:6px;padding:5px 7px;border-radius:4px;font-size:0.65rem;line-height:1.6;animation:fadeUp 0.2s ease}
+  .lentry.think{background:rgba(255,209,102,0.05);border-left:2px solid var(--yellow)}
+  .lentry.call {background:rgba(0,212,255,0.05);border-left:2px solid var(--cyan)}
+  .lentry.allow{background:rgba(0,255,136,0.05);border-left:2px solid var(--green)}
+  .lentry.deny {background:rgba(255,61,90,0.05);border-left:2px solid var(--red)}
+  .lentry.info {background:rgba(176,108,255,0.05);border-left:2px solid var(--purple)}
+  .ltime{color:var(--text-dim);margin-right:3px}
+  .lmsg.think{color:var(--yellow)}
+  .lmsg.call {color:var(--cyan-dim)}
+  .lmsg.allow{color:var(--green)}
+  .lmsg.deny {color:var(--red)}
+  .lmsg.info {color:var(--purple)}
+  .lempty{color:var(--text-dim);text-align:center;padding:1.5rem 0.5rem;font-size:0.68rem}
+  .clrbtn{background:none;border:1px solid var(--border);border-radius:4px;padding:2px 7px;color:var(--text-dim);font-family:var(--mono);font-size:0.6rem;cursor:pointer}
+  .clrbtn:hover{color:var(--text)}
+
+  .arch-note{font-size:0.65rem;color:var(--text-dim);line-height:1.6;padding:0.5rem 0.6rem;background:rgba(0,212,255,0.03);border:1px solid rgba(0,212,255,0.1);border-radius:6px;margin-top:6px}
+  .arch-note span{color:var(--cyan)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🤖</div>
+    <div class="logo-title">AVP <span>Agent</span></div>
+  </div>
+  <div class="hdr-right">
+    <div class="sdot" id="sdot"></div>
+    <span class="slabel" id="slabel">Listo</span>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- SIDEBAR IZQUIERDA -->
+  <div class="sidebar">
+    <div class="ssec">
+      <div class="slbl">🏗️ Arquitectura</div>
+      <div class="arch-note">
+        <span>Browser</span> → API Gateway<br/>
+        → <span>Lambda /agent</span><br/>
+        → Anthropic API 🧠<br/>
+        → <span>Lambda check_avp</span><br/>
+        → AVP → ALLOW/DENY
+      </div>
+      <div style="font-size:0.62rem;color:var(--green);margin-top:6px;">✅ API Key segura en Lambda</div>
+    </div>
+
+    <div class="ssec">
+      <div class="slbl">👥 Usuarios</div>
+      <div class="uchip"><span class="uavatar">👩‍💼</span><div><div class="uname">Alice Garcia</div><div class="urole">Finance</div></div><span class="rtag rAnalyst">Analyst</span></div>
+      <div class="uchip"><span class="uavatar">👨‍💻</span><div><div class="uname">Bob Torres</div><div class="urole">Finance</div></div><span class="rtag rAdmin">Admin</span></div>
+      <div class="uchip"><span class="uavatar">👩‍🔬</span><div><div class="uname">Carol Mendez</div><div class="urole">HR</div></div><span class="rtag rAuditor">Auditor</span></div>
+    </div>
+
+    <div class="ssec">
+      <div class="slbl">💬 Ejemplos</div>
+      <button class="sbtn" onclick="use(this)">¿Puede Alice leer el Q4-Report-2024?</button>
+      <button class="sbtn" onclick="use(this)">¿Bob puede eliminar el HR-Payroll-2024?</button>
+      <button class="sbtn" onclick="use(this)">¿Carol puede editar el Q4-Report-2024?</button>
+      <button class="sbtn" onclick="use(this)">Verifica acceso de todos al Q4-Report-2024</button>
+      <button class="sbtn" onclick="use(this)">¿Qué puede hacer Carol en el sistema?</button>
+    </div>
+
+    <div class="ssec">
+      <div class="slbl">📁 Recursos</div>
+      <div style="font-size:0.68rem;color:var(--text-dim);line-height:2">
+        📊 Q4-Report-2024 <span style="font-size:0.6rem">(Finance)</span><br/>
+        💰 HR-Payroll-2024 <span style="font-size:0.6rem">(HR)</span><br/>
+        📈 Sales-Dashboard <span style="font-size:0.6rem">(Sales)</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHAT -->
+  <div class="chat-area">
+    <div class="messages" id="msgs">
+      <div class="welcome">
+        <div style="font-size:2.5rem;margin-bottom:0.6rem">🤖</div>
+        <h2>AVP <span style="color:var(--cyan)">Agent</span></h2>
+        <p>Soy un agente con acceso a <strong>AWS Verified Permissions</strong>.<br/>
+        Pregúntame en lenguaje natural — consulto AVP en tiempo real vía Lambda.</p>
+      </div>
+    </div>
+    <div class="input-area">
+      <div class="irow">
+        <textarea id="ibox" class="ibox" placeholder="Ej: ¿Puede Alice leer el Q4 Report?" rows="1"
+          onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+        <button class="send-btn" id="sendBtn" onclick="send()">▶</button>
+      </div>
+      <div class="ihint">Enter para enviar · Shift+Enter nueva línea</div>
+    </div>
+  </div>
+
+  <!-- LOG -->
+  <div class="agent-log">
+    <div class="lhdr">
+      <span class="ltitle">⚙ Razonamiento</span>
+      <button class="clrbtn" onclick="clearLog()">limpiar</button>
+    </div>
+    <div class="lentries" id="logEl">
+      <div class="lempty">El razonamiento del agente aparecerá aquí.</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── ÚNICA config que necesitas cambiar ───────────────────
+const API_BASE = "https://vnly0xey30.execute-api.us-west-2.amazonaws.com/prod";
+// ─────────────────────────────────────────────────────────
+
+let logEntries = [];
+let thinking   = false;
+let messages   = []; // historial de conversación
+
+async function send() {
+  const ibox = document.getElementById("ibox");
+  const text = ibox.value.trim();
+  if (!text || thinking) return;
+  ibox.value = ""; autoResize(ibox);
+
+  document.querySelector(".welcome")?.remove();
+  appendMsg("user", text);
+
+  // Agrega al historial
+  messages.push({ role: "user", content: text });
+
+  const tid = showTyping();
+  thinking = true;
+  setStatus("thinking", "Agente pensando...");
+  document.getElementById("sendBtn").disabled = true;
+
+  addLog("info", `Consulta: "${text.substring(0,45)}..."`);
+  addLog("call", "POST /agent → Lambda → Anthropic + AVP");
+
+  try {
+    const res = await fetch(`${API_BASE}/agent`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ messages })
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    removeTyping(tid);
+
+    // Actualiza historial con la respuesta del agente
+    messages = data.messages || messages;
+    messages.push({ role: "assistant", content: data.response });
+
+    appendMsg("agent", data.response);
+    addLog("allow", "Respuesta recibida del agente ✅");
+
+  } catch(e) {
+    removeTyping(tid);
+    appendMsg("agent", `⚠ Error: ${e.message}`);
+    addLog("deny", `Error: ${e.message}`);
+  } finally {
+    thinking = false;
+    document.getElementById("sendBtn").disabled = false;
+    setStatus("on", "Listo");
+  }
+}
+
+function setStatus(type, label) {
+  document.getElementById("sdot").className = `sdot ${type === "thinking" ? "thinking" : ""}`;
+  document.getElementById("slabel").textContent = label;
+}
+
+function appendMsg(role, text) {
+  const c = document.getElementById("msgs");
+  const time = new Date().toLocaleTimeString("es-PE",{hour:"2-digit",minute:"2-digit"});
+  const fmt = text
+    .replace(/\bALLOW\b/g,'<span class="di di-ALLOW">✅ ALLOW</span>')
+    .replace(/\bDENY\b/g, '<span class="di di-DENY">🚫 DENY</span>')
+    .replace(/\n/g,"<br/>");
+  const d = document.createElement("div");
+  d.className = `msg ${role}`;
+  d.innerHTML = `<div class="mavatar">${role==="agent"?"🤖":"👤"}</div>
+    <div class="mcontent"><div class="mbubble">${fmt}</div><div class="mtime">${time}</div></div>`;
+  c.appendChild(d); c.scrollTop = c.scrollHeight;
+}
+
+let tc = 0;
+function showTyping() {
+  const id = `t${++tc}`;
+  const c  = document.getElementById("msgs");
+  const d  = document.createElement("div");
+  d.className = "msg agent"; d.id = id;
+  d.innerHTML = `<div class="mavatar">🤖</div><div class="mcontent"><div class="mbubble"><div class="typing"><span></span><span></span><span></span></div></div></div>`;
+  c.appendChild(d); c.scrollTop = c.scrollHeight; return id;
+}
+function removeTyping(id) { document.getElementById(id)?.remove(); }
+
+const LICONS = {think:"🧠",call:"⚡",allow:"✅",deny:"🚫",info:"💡"};
+function addLog(type, msg) {
+  const time = new Date().toLocaleTimeString("es-PE",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+  logEntries.unshift({type,msg,time});
+  document.getElementById("logEl").innerHTML = logEntries.slice(0,40).map(e=>`
+    <div class="lentry ${e.type}">
+      <span class="ltime">${e.time}</span>${LICONS[e.type]||"•"}
+      <span class="lmsg ${e.type}"> ${e.msg}</span>
+    </div>`).join("");
+}
+function clearLog() { logEntries=[]; document.getElementById("logEl").innerHTML=`<div class="lempty">El razonamiento del agente aparecerá aquí.</div>`; }
+
+function handleKey(e) { if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();} }
+function autoResize(el) { el.style.height="auto"; el.style.height=Math.min(el.scrollHeight,100)+"px"; }
+function use(btn) { document.getElementById("ibox").value=btn.textContent; document.getElementById("ibox").focus(); }
+</script>
+</body>
+</html>

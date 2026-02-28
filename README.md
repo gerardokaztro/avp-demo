@@ -2,7 +2,7 @@
 ### AWS Student Community Day Perú 🇵🇪
 **Speaker:** Gerardo Castro, AWS Security Hero
 
-> Demo en vivo de AWS Verified Permissions: autorización centralizada con políticas Cedar, sin VPN, con Zero Trust nativo.
+> Demo en vivo de AWS Verified Permissions: autorización centralizada con políticas Cedar, sin VPN, con Zero Trust nativo. Incluye un agente de IA que consulta AVP en lenguaje natural.
 
 ---
 
@@ -12,11 +12,29 @@
 avp-demo/
 ├── template.yaml          ← SAM Template (Lambda + API Gateway)
 ├── lambda/
-│   ├── app.py             ← Lambda principal (llama a AVP IsAuthorized)
-│   └── users.py           ← Lambda helper (lista usuarios y recursos para la UI)
+│   ├── app.py             ← Lambda: verifica acceso con AVP (IsAuthorized)
+│   ├── users.py           ← Lambda: lista usuarios y recursos para la UI
+│   └── agent.py           ← Lambda: agente IA — proxy seguro hacia Anthropic
 └── frontend/
-    └── index.html         ← Web App (se abre directo en el browser)
+    ├── index.html         ← Web App del lab principal
+    ├── avp-agent.html     ← Agente IA con lenguaje natural + AVP
+    └── avp-level3-concept.html ← Concepto nivel 3: lenguaje natural → Cedar
 ```
+
+---
+
+## 💰 Costos — Lee esto antes de deployar
+
+| Componente | Costo | Requerido para |
+|---|---|---|
+| AWS Lambda | Gratis (Free Tier: 1M req/mes) | Todo |
+| API Gateway | Gratis (Free Tier: 1M calls/mes) | Todo |
+| AVP | ~$0.00015 por 1,000 requests | Todo |
+| Anthropic API | ~$0.25 por 1M tokens (Haiku) | Solo agente IA |
+| **Lab principal** | **≈ $0.00** | `index.html` |
+| **Lab completo con agente** | **≈ $0.01 - $0.05 por sesión** | `avp-agent.html` |
+
+> ⚠️ **La Anthropic API tiene costo por uso.** Para el agente de IA necesitas una cuenta en [console.anthropic.com](https://console.anthropic.com) con créditos cargados (mínimo $5). Si solo quieres el lab principal de AVP, puedes dejar el parámetro `AnthropicApiKey` con el valor `placeholder` — el `index.html` no lo usa.
 
 ---
 
@@ -123,11 +141,7 @@ Clic en **"Save changes"** ✅
 
 ```bash
 cd avp-demo/
-
-# Build
 sam build
-
-# Deploy guiado
 sam deploy --guided
 ```
 
@@ -138,11 +152,13 @@ sam deploy --guided
 | Stack Name | `avp-demo` |
 | AWS Region | `us-west-2` (o tu región) |
 | Parameter PolicyStoreId | ← pega el ID del Paso 1 |
+| Parameter AnthropicApiKey | ← tu `sk-ant-...` (o `placeholder` si no usarás el agente) |
 | Confirm changes before deploy | `y` |
 | Allow SAM CLI to create IAM roles | `y` |
 | Disable rollback | `n` |
 | CheckAccessFunction has no authentication. Is this okay? | `y` |
 | GetUsersFunction has no authentication. Is this okay? | `y` |
+| AgentFunction has no authentication. Is this okay? | `y` |
 | Save arguments to configuration file | `y` |
 | SAM configuration file [samconfig.toml] | ← solo presiona ENTER |
 | SAM configuration environment [default] | ← solo presiona ENTER |
@@ -152,30 +168,33 @@ Al finalizar verás:
 ```
 Outputs
 -------
-ApiUrl = https://XXXXXXXX.execute-api.us-west-2.amazonaws.com/prod
+ApiUrl        = https://XXXXXXXX.execute-api.us-west-2.amazonaws.com/prod
+AgentEndpoint = https://XXXXXXXX.execute-api.us-west-2.amazonaws.com/prod/agent
 ```
 
-**Copia esa URL** ← la necesitas para el Paso 4.
+**Copia la `ApiUrl`** ← la necesitas para el Paso 4.
 
 ---
 
 ### PASO 4 — Configurar el Frontend
 
-Abre `frontend/index.html` en tu editor y busca la línea ~837:
+Abre **ambos** archivos en tu editor y actualiza la URL:
 
+**`frontend/index.html`** — línea ~837:
 ```javascript
-// ANTES:
-const API_BASE_URL = "https://TU_API_ID.execute-api.us-east-1.amazonaws.com/prod";
-
-// DESPUÉS — pega tu URL del Paso 3 (sin slash al final, sin /check-access):
 const API_BASE_URL = "https://XXXXXXXX.execute-api.us-west-2.amazonaws.com/prod";
 ```
 
-> ⚠️ La URL debe terminar en `/prod` — sin agregar `/check-access` ni ningún path adicional.
+**`frontend/avp-agent.html`** — línea ~237:
+```javascript
+const API_BASE = "https://XXXXXXXX.execute-api.us-west-2.amazonaws.com/prod";
+```
+
+> ⚠️ La URL debe terminar en `/prod` — sin agregar paths adicionales.
 
 ---
 
-### PASO 5 — Levantar servidor local y probar
+### PASO 5 — Levantar servidor local
 
 ```bash
 cd avp-demo/frontend
@@ -183,11 +202,14 @@ python3 -m http.server 8000
 ```
 
 Abre en tu browser:
-```
-http://localhost:8000/index.html
-```
 
-> ⚠️ No abras el archivo directo con `file://` — el browser bloqueará las llamadas al API por CORS. Siempre usa `http://localhost:8000`.
+| URL | Descripción |
+|---|---|
+| `http://localhost:8000/index.html` | Lab principal AVP |
+| `http://localhost:8000/avp-agent.html` | Agente IA con lenguaje natural |
+| `http://localhost:8000/avp-level3-concept.html` | Concepto nivel 3 (requiere Anthropic API Key en UI) |
+
+> ⚠️ No abras los archivos con `file://` — el browser bloqueará las llamadas al API por CORS. Siempre usa `http://localhost:8000`.
 
 ---
 
@@ -195,26 +217,20 @@ http://localhost:8000/index.html
 
 > Antes de empezar: asegúrate de que tu Policy Store **no tenga ninguna política creada**.
 
----
-
 ### ACT 1 — Zero Trust: Deny por defecto ❌
-1. Ingresa tu Policy Store ID en el campo de configuración de la app
+1. Ingresa tu Policy Store ID en el campo de configuración
 2. Selecciona **Alice Garcia** (Analyst, Finance)
-3. Selecciona **Q4-Report-2024**
-4. Acción: **Read**
-5. Clic en **"Verificar con AVP"**
-6. Resultado: 🚫 **DENY**
+3. Selecciona **Q4-Report-2024** → Acción **Read**
+4. Resultado: 🚫 **DENY**
 
-**Mensaje para la audiencia:**
-> *"Alice tiene credenciales válidas y está autenticada. Pero AVP dice DENY. ¿Por qué? Porque no existe ninguna política Cedar que lo permita. Esto es Zero Trust: deny por defecto, sin excepciones."*
+> *"Alice tiene credenciales válidas pero AVP dice DENY. Esto es Zero Trust: deny por defecto."*
 
 ---
 
 ### ACT 2 — Política Cedar activa en tiempo real ✅
-Ve a la consola AVP → **Policies → Create policy → Static policy**
+Consola AVP → **Policies → Create → Static policy**
 
 Nombre: `AllowAnalystReadOwnDepartment`
-
 ```cedar
 permit (
   principal in FinancialApp::Role::"Analyst",
@@ -226,26 +242,18 @@ when {
 };
 ```
 
-Vuelve a la app — **sin recargar, sin redeployar** — y repite la misma solicitud de Alice.
+Repite la solicitud de Alice → ✅ **ALLOW**
 
-Resultado: ✅ **ALLOW**
-
-**Mensaje para la audiencia:**
-> *"¿Cambié el código? No. ¿Redeployé el Lambda? No. Solo agregué una política Cedar. La autorización vive fuera de la aplicación — eso es AVP."*
+> *"¿Cambié el código? No. ¿Redeployé? No. Solo agregué una política Cedar."*
 
 ---
 
-### ACT 3 — ABAC: atributos que controlan el acceso 🚫
+### ACT 3 — ABAC: atributos que controlan el acceso
 1. Selecciona **Carol Mendez** (Auditor, **HR**)
 2. Selecciona **Q4-Report-2024** (departamento: **Finance**)
-3. Acción: **Read**
-4. Resultado: 🚫 **DENY**
-
-**Mensaje para la audiencia:**
-> *"Carol está autenticada y tiene rol Auditor. Pero el documento es de Finance y Carol es de HR. AVP comparó los atributos de ambos y dijo DENY. Eso es ABAC — el acceso depende de los atributos, no solo del rol."*
+3. Acción **Read** → 🚫 **DENY**
 
 Crea esta política:
-
 ```cedar
 permit (
   principal in FinancialApp::Role::"Auditor",
@@ -253,14 +261,12 @@ permit (
   resource
 );
 ```
-
-Repite la solicitud → ✅ **ALLOW**
+Repite → ✅ **ALLOW**
 
 ---
 
-### ACT 4 — forbid tiene precedencia sobre permit 🚫
-Crea esta segunda política para Carol:
-
+### ACT 4 — forbid tiene precedencia sobre permit
+Crea esta política para Carol:
 ```cedar
 forbid (
   principal in FinancialApp::Role::"Auditor",
@@ -269,14 +275,18 @@ forbid (
 );
 ```
 
-En la app:
-1. Selecciona **Carol Mendez**
-2. Selecciona **Q4-Report-2024**
-3. Acción: **Edit**
-4. Resultado: 🚫 **DENY**
+Carol intenta **Edit** → 🚫 **DENY**
 
-**Mensaje para la audiencia:**
-> *"Carol tiene permit para Read pero forbid para Edit y Delete. En Cedar, forbid siempre gana sobre permit — sin excepciones. Puedes dar acceso amplio y restringir quirúrgicamente acciones específicas."*
+> *"forbid siempre gana sobre permit — sin excepciones."*
+
+---
+
+### ACT 5 (Bonus) — Agente IA con lenguaje natural 🤖
+Abre `http://localhost:8000/avp-agent.html` y escribe:
+
+> *"Verifica acceso de todos los usuarios al Q4-Report-2024"*
+
+El agente razona, hace múltiples llamadas a AVP y responde con contexto — todo sin que le digas cómo hacerlo.
 
 ---
 
@@ -286,8 +296,27 @@ En la app:
 |---|---|---|---|---|---|
 | 1 | Alice (Analyst) | Read | Q4-Report-2024 | 🚫 DENY | Zero Trust: deny por defecto |
 | 2 | Alice (Analyst) | Read | Q4-Report-2024 | ✅ ALLOW | Política Cedar en tiempo real |
-| 3 | Carol (Auditor/HR) | Read | Q4-Report-2024 (Finance) | 🚫 DENY → ✅ ALLOW | ABAC: atributos del usuario vs recurso |
+| 3 | Carol (Auditor/HR) | Read | Q4-Report-2024 (Finance) | 🚫→✅ | ABAC: atributos del contexto |
 | 4 | Carol (Auditor) | Edit | Q4-Report-2024 | 🚫 DENY | forbid > permit |
+| 5 | Todos | Múltiples | Múltiples | Varía | Agente IA + AVP |
+
+---
+
+## 🤖 Agente IA — Arquitectura segura
+
+```
+Browser
+  ↓
+API Gateway → Lambda /agent   ← API Key de Anthropic vive aquí (segura)
+                  ↓
+            Anthropic API (Claude Haiku)
+                  ↓
+            check_avp_access() tool
+                  ↓
+            Lambda /check-access → AVP → ALLOW/DENY
+```
+
+> ✅ La API Key de Anthropic **nunca se expone en el frontend** — vive encriptada como variable de entorno en el Lambda.
 
 ---
 
@@ -302,20 +331,11 @@ sam delete --stack-name avp-demo
 
 ---
 
-## 💰 Costos estimados de la demo
-
-| Servicio | Costo |
-|---|---|
-| Lambda | Gratis (Free Tier: 1M requests/mes) |
-| API Gateway | Gratis (Free Tier: 1M calls/mes) |
-| AVP | ~$0.00015 por cada 1,000 requests |
-| **Demo completa** | **≈ $0.00** |
-
----
-
 ## 📚 Recursos para seguir aprendiendo
 
 - [AVP Documentación oficial](https://docs.aws.amazon.com/verifiedpermissions/)
 - [Cedar Playground](https://www.cedarpolicy.com/en/playground) ← practica Cedar sin AWS
 - [AVP Workshop oficial AWS](https://catalog.workshops.aws/verified-permissions)
-- [Cedar en GitHub](https://github.com/cedar-policy/cedar) ← open source
+- [Cedar en GitHub](https://github.com/cedar-policy/cedar)
+- [Anthropic API Docs](https://docs.anthropic.com) ← para el agente IA
+- [console.anthropic.com](https://console.anthropic.com) ← obtén tu API Key
