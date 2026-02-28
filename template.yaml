@@ -1,0 +1,87 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  AVP Demo - AWS Student Community Day Peru
+  Speaker: Gerardo Castro, AWS Security Hero
+  Demo: AWS Verified Permissions sin VPN
+
+Globals:
+  Function:
+    Timeout: 10
+    Runtime: python3.11
+    Environment:
+      Variables:
+        POLICY_STORE_ID: !Ref PolicyStoreId
+
+Parameters:
+  PolicyStoreId:
+    Type: String
+    Description: "ID del Policy Store de AWS Verified Permissions (lo obtienes de la consola AVP)"
+
+Resources:
+
+  # ─────────────────────────────────────────────
+  #  API Gateway
+  # ─────────────────────────────────────────────
+  AVPDemoApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: avp-demo-api
+      StageName: prod
+      Cors:
+        AllowMethods: "'POST,GET,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
+        AllowOrigin: "'*'"
+
+  # ─────────────────────────────────────────────
+  #  Lambda: Verificar Acceso con AVP
+  # ─────────────────────────────────────────────
+  CheckAccessFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: avp-check-access
+      CodeUri: lambda/
+      Handler: app.lambda_handler
+      Description: "Verifica si un usuario puede acceder a un recurso usando AVP"
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - verifiedpermissions:IsAuthorized
+              Resource: "*"
+      Events:
+        CheckAccess:
+          Type: Api
+          Properties:
+            RestApiId: !Ref AVPDemoApi
+            Path: /check-access
+            Method: POST
+
+  # ─────────────────────────────────────────────
+  #  Lambda: Listar Usuarios Demo (helper)
+  # ─────────────────────────────────────────────
+  GetUsersFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: avp-get-users
+      CodeUri: lambda/
+      Handler: users.lambda_handler
+      Description: "Retorna los usuarios demo para la UI"
+      Events:
+        GetUsers:
+          Type: Api
+          Properties:
+            RestApiId: !Ref AVPDemoApi
+            Path: /users
+            Method: GET
+
+Outputs:
+  ApiUrl:
+    Description: "URL del API Gateway - usala en el frontend"
+    Value: !Sub "https://${AVPDemoApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
+    Export:
+      Name: AVPDemoApiUrl
+
+  CheckAccessEndpoint:
+    Description: "Endpoint para verificar acceso"
+    Value: !Sub "https://${AVPDemoApi}.execute-api.${AWS::Region}.amazonaws.com/prod/check-access"
